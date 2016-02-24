@@ -1584,6 +1584,10 @@ ipmi_spd_print(uint8_t *spd_data, int len)
 									else
 										printf("%s\n",
 										val2str(spd_data[72], jedec_id9_vals));
+								}
+							}
+						}
+					}
 				}
 			}
 		}
