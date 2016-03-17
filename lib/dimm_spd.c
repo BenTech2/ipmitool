@@ -1,21 +1,21 @@
 /*
  * Copyright (c) 2003 Sun Microsystems, Inc.  All Rights Reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
- * 
+ *
  * Redistribution of source code must retain the above copyright
  * notice, this list of conditions and the following disclaimer.
- * 
+ *
  * Redistribution in binary form must reproduce the above copyright
  * notice, this list of conditions and the following disclaimer in the
  * documentation and/or other materials provided with the distribution.
- * 
+ *
  * Neither the name of Sun Microsystems, Inc. or the names of
  * contributors may be used to endorse or promote products derived
  * from this software without specific prior written permission.
- * 
+ *
  * This software is provided "AS IS," without a warranty of any kind.
  * ALL EXPRESS OR IMPLIED CONDITIONS, REPRESENTATIONS AND WARRANTIES,
  * INCLUDING ANY IMPLIED WARRANTY OF MERCHANTABILITY, FITNESS FOR A
@@ -35,9 +35,12 @@
 #include <ipmitool/helper.h>
 #include <ipmitool/ipmi_intf.h>
 #include <ipmitool/ipmi_fru.h>
-
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
+#include <stdio.h>
+#include <math.h>
 
 extern int verbose;
 
@@ -64,6 +67,41 @@ const struct valstr spd_memtype_vals[] = {
 	{ 0x0A, "DDR2 SDRAM FB-DIMM Probe" },
 	{ 0x0B, "DDR3 SDRAM" },
 	{ 0x0C, "DDR4 SDRAM" },
+	{ 0x00, NULL },
+};
+
+const struct valstr ddr2fb_banks_vals[] =
+{
+	{ 0, "4" },   /* 0 */
+	{ 1, "8" },   /* 1 */
+	{ 2, "16" },  /* 2 */
+	{ 3, "32" },  /* 3 */
+	{ 0x00, NULL },
+};
+
+/* Byte 4 - */
+const struct valstr ddr2fb_columns_vals[] =
+{
+	{ 0, "9" },   /* 0 */
+	{ 1, "10" },  /* 1 */
+	{ 2, "11" },  /* 2 */
+	{ 0x00, NULL },
+};
+
+const struct valstr ddr2fb_rows_vals[] =
+{
+	{ 0, "12" },  /* 0 */
+	{ 1, "13" },  /* 1 */
+	{ 2, "14" },  /* 2 */
+	{ 3, "15" },  /* 3 */
+	{ 0x00, NULL },
+};
+
+const struct valstr ddr2fb_ranks_vals[] =
+{
+	{ 0, "Undifined" },   /* 0 */
+	{ 1, "1" },      /* 1 */
+	{ 2, "2" },     /* 2 */
 	{ 0x00, NULL },
 };
 
@@ -1340,8 +1378,94 @@ ipmi_spd_print(uint8_t *spd_data, int len)
 
 	printf(" Memory Type           : %s\n",
 	       val2str(spd_data[2], spd_memtype_vals));
-	
-	if (spd_data[2] == 0x0B)	/* DDR3 SDRAM */
+
+	if (spd_data[2] == 0x09)	/* DDR2 Fully Buffered SDRAM */
+	{
+		int iPN;
+		char *pchPN = spd_data+128;
+
+        long mem_size = 0;
+		int rows = 0;
+		int columns = 0;
+		int ranks = 0;
+		int banks = 0;
+        
+
+		if (len < 148)
+			return -1; /* we need first 91 bytes to do our thing */
+
+		rows = ((spd_data[4]&0xE0)>>5);
+		columns = ((spd_data[4]&0x1C)>>2);
+		banks = (spd_data[4]&0x03);
+		ranks = (spd_data[7]&0x38)>>3;
+		int banksdiv = atoi(val2str(banks, ddr2fb_banks_vals));
+        int divisor = log10(banksdiv)/log10(2);
+        mem_size = (exp2(atoi(val2str(rows, ddr2fb_rows_vals)) + atoi(val2str(columns, ddr2fb_columns_vals)) + divisor + 3)/1024/1024) * 2;
+
+		printf(" Rows                  : %s\n", val2str(rows, ddr2fb_rows_vals));
+		printf(" Columns               : %s\n", val2str(columns, ddr2fb_columns_vals));
+		printf(" Memory Banks          : %s\n", val2str(banks, ddr2fb_banks_vals));
+		printf(" Number of Ranks       : %s\n", val2str(ranks, ddr2fb_ranks_vals));
+        printf(" divisor               : %d\n", divisor);
+        printf(" Memory size           : %ld MB\n", mem_size);
+
+		printf(" Manufacturer          : ");
+		switch (spd_data[117]&127)
+		{
+		case	0:
+			printf("%s\n", val2str(spd_data[118], jedec_id1_vals));
+			break;
+
+		case	1:
+			printf("%s\n", val2str(spd_data[118], jedec_id2_vals));
+			break;
+
+		case	2:
+			printf("%s\n", val2str(spd_data[118], jedec_id3_vals));
+			break;
+
+		case	3:
+			printf("%s\n", val2str(spd_data[118], jedec_id4_vals));
+			break;
+
+		case	4:
+			printf("%s\n", val2str(spd_data[118], jedec_id5_vals));
+			break;
+
+		case	5:
+			printf("%s\n", val2str(spd_data[118], jedec_id6_vals));
+			break;
+
+		case	6:
+			printf("%s\n", val2str(spd_data[118], jedec_id7_vals));
+			break;
+
+		case	7:
+			printf("%s\n", val2str(spd_data[118], jedec_id8_vals));
+			break;
+
+		case	8:
+			printf("%s\n", val2str(spd_data[118], jedec_id9_vals));
+			break;
+
+		default:
+			printf("%s\n", "JEDEC JEP106 update required" );
+
+		}
+
+		printf(" Manufacture Date      : year %c%c week %c%c\n",
+		'0'+(spd_data[120]>>4), '0'+(spd_data[120]&15), '0'+(spd_data[121]>>4), '0'+(spd_data[121]&15) );
+
+		printf(" Serial Number         : %02x%02x%02x%02x\n",
+		spd_data[122], spd_data[123], spd_data[124], spd_data[125]);
+
+		printf(" Part Number           : ");
+		for (iPN=0; iPN < 19; iPN++)
+		{
+			printf( "%c", *pchPN++ );
+		}
+		printf("\n");
+	} else if (spd_data[2] == 0x0B)	/* DDR3 SDRAM */
 	{
 		int iPN;
 		char *pchPN = spd_data+128;
@@ -1353,7 +1477,7 @@ ipmi_spd_print(uint8_t *spd_data, int len)
 
 		if (len < 148)
 			return -1; /* we need first 91 bytes to do our thing */
-	
+
 
 		sdram_cap = ldexp(256,(spd_data[4]&15));
 		pri_bus_width = ldexp(8,(spd_data[8]&7));
@@ -1366,7 +1490,7 @@ ipmi_spd_print(uint8_t *spd_data, int len)
 		printf(" SDRAM Device Width    : %d bits\n", sdram_width );
 		printf(" Number of Ranks       : %d\n", ranks );
 		printf(" Memory size           : %d MB\n", mem_size );
-		
+
 		/* printf(" Memory Density        : %s\n", val2str(spd_data[4]&15, ddr3_density_vals)); */
 		printf(" 1.5 V Nominal Op      : %s\n", (((spd_data[6]&1) != 0) ? "No":"Yes" ) );
 		printf(" 1.35 V Nominal Op     : %s\n", (((spd_data[6]&2) != 0) ? "No":"Yes" ) );
@@ -1417,15 +1541,15 @@ ipmi_spd_print(uint8_t *spd_data, int len)
 
 		}
 
-		printf(" Manufacture Date      : year %c%c week %c%c\n", 
+		printf(" Manufacture Date      : year %c%c week %c%c\n",
 		'0'+(spd_data[120]>>4), '0'+(spd_data[120]&15), '0'+(spd_data[121]>>4), '0'+(spd_data[121]&15) );
-	
+
 		printf(" Serial Number         : %02x%02x%02x%02x\n",
 		spd_data[122], spd_data[123], spd_data[124], spd_data[125]);
-	
+
 		printf(" Part Number           : ");
 		for (iPN=0; iPN < 19; iPN++)
-		{	
+		{
 			printf( "%c", *pchPN++ );
 		}
 		printf("\n");
@@ -1547,7 +1671,7 @@ ipmi_spd_print(uint8_t *spd_data, int len)
 		val2str(spd_data[8], spd_voltage_vals));
 		printf(" Error Detect/Cor      : %s\n",
 		val2str(spd_data[11], spd_config_vals));
-	
+
 		/* handle jedec table bank continuation values */
 		printf(" Manufacturer          : ");
 		if (spd_data[64] != 0x7f)
@@ -1598,7 +1722,7 @@ ipmi_spd_print(uint8_t *spd_data, int len)
 			part[18] = 0;
 			printf(" Part Number           : %s\n", part);
 		}
-	
+
 		printf(" Serial Number         : %02x%02x%02x%02x\n",
 		spd_data[95], spd_data[96], spd_data[97], spd_data[98]);
 	}
