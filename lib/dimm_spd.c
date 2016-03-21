@@ -1479,10 +1479,10 @@ ipmi_spd_print(uint8_t *spd_data, int len)
 			return -1; /* we need first 91 bytes to do our thing */
 
 
-		sdram_cap = ldexp(256,(spd_data[4]&15));
+		sdram_cap = ldexp(256,(spd_data[4]&0x0F));
 		pri_bus_width = ldexp(8,(spd_data[8]&7));
 		sdram_width = ldexp(4,(spd_data[7]&7));
-		ranks = ldexp(1,((spd_data[7]&0x3F)>>3));
+		ranks = ((spd_data[7]&0x3F)>>3) + 1;
 		mem_size = (sdram_cap/8) * (pri_bus_width/sdram_width) * ranks;
 		printf(" SDRAM Capacity        : %d MB\n", sdram_cap );
 		printf(" Memory Banks          : %s\n", val2str(spd_data[4]>>4, ddr3_banks_vals));
